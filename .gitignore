@@ -1,0 +1,7 @@
+ecflow/*.def
+datasets
+log
+datasets/*
+log/*
+ecflow/jobs/*
+!ecflow/jobs/.gitkeep

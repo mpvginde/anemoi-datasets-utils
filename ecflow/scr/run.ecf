@@ -1,0 +1,8 @@
+%include <head.h>
+%include <slurm.h>
+
+%MODULES%
+
+%CONDA% anemoi-datasets %COMMAND% %CONFIG% %OUTPUT% %FLAGS% 
+
+%include <tail.h>
