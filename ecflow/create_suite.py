@@ -262,6 +262,7 @@ class Creator:
         elif node.name() == "load":
             flag = f"--part %PART%/{self.nparts}"
             if cache and node.name()=="load":
+                cache = os.path.join(cache,"tmp_%FAMILY1%")
                 flag += f" --cache {cache}"
         
         elif node.name() == "init_statistics" or node.name == "final_statistics":
