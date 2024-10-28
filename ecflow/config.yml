@@ -1,40 +1,47 @@
 common:
   small: &small
     qos: nf
-    time: 00:15:00
+    time: 00:45:00
+    nodes: 1 
+    ntasks_per_node: 1
+    cpus_per_task: 1
+    mem: 2G
+  small_long: &small_long
+    qos: nf
+    time: 02:00:00
     nodes: 1 
     ntasks_per_node: 1
     cpus_per_task: 1
     mem: 2G
   medium: &medium
     qos: nf
-    time: 00:30:00
+    time: 03:00:00
     nodes: 1
     ntasks_per_node: 1
     cpus_per_task: 1
     mem: 4G
   large: &large
-    qos: np
-    time: 02:00:00
+    qos: nf
+    time: 04:30:00
     nodes: 1
     ntasks_per_node: 1
     cpus_per_task: 1
-    mem: 0
+    mem: 50G
 
 # anemoi-datasets create recipe
-config: /perm/cu0k/create-datasets/configs/lam-rr-an-oper-0001-mars-5p5km-1984-2020-3h-rmi-v1.yaml
+config: /perm/cu0k/create-datasets/configs/lam-rr-an-oper-0001-mars-5p5km-1984-2020-3h-rmi-v2.yaml
 # output zarr.-file
-output: /scratch/cu0k/ai-ml/datasets/lam-rr-an-oper-0001-mars-5p5km-1984-2020-3h-rmi-v1.zarr
+output: /scratch/cu0k/ai-ml/datasets/lam-rr-an-oper-0001-mars-5p5km-1984-2020-3h-rmi-v2.zarr
 # overwrite previous file (default: False)
 overwrite: False
 # user-defined cache-dir (default: default cache-dir)
 cache : /scratch/cu0k
 # number of anemoi-datasets load parts
-load_parts: 200
+load_parts: 280
 # number of ecFlow tasks for loading
 load_tasks: 40
 # maximum number of ecFlow task running at the same time (not-implemented)
-max_load_tasks_running: 10
+max_load_tasks_running: 40
 # Calculate additional statistics (default: False)
 statistics: True
 # number of anemoi-dataset load-additions parts
@@ -48,7 +55,7 @@ deltas:
   - 12
   - 24
 # Use --trace flage (default: False)
-trace: False
+trace: True
 # Cleanup after dataset creation (default: False)
 cleanup: True
 # Patch after dataset creation (default: False)
@@ -62,7 +69,7 @@ resources:
   final: *small
   init_statistics: *small
   load_statistics: *medium
-  final_statistics: *small
+  final_statistics: *small_long
   cleanup: *small
   patch: *small
 
