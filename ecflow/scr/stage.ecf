@@ -1,0 +1,9 @@
+%include <head.h>
+%include <slurm.h>
+
+# Recall the MARS data of one month from tape (prestage family, see create_suite.py)
+module load mars
+cat %REQUEST%
+mars %REQUEST%
+
+%include <tail.h>

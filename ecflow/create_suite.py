@@ -1,5 +1,6 @@
 import yaml
 import os
+import datetime
 from ecflow import *
 from argparse import ArgumentParser
 
@@ -101,6 +102,11 @@ class Creator:
         family.add_task("run")
 
 
+        # Prestage (optional): recall the MARS data of each month from tape before loading
+        prestage = self.config.get("prestage")
+        if prestage:
+            self._define_prestage(prestage)
+
         # Load
         family = self.suite.add_family("load")
         family.add_trigger("init == complete")
@@ -110,7 +116,9 @@ class Creator:
         for i,parts in enumerate(self.parts):
             _family = family.add_family(f"loader_{i+1}")
             _family.add_repeat(RepeatString("PART",parts))
-            _family.add_task("run")
+            task = _family.add_task("run")
+            if prestage:
+                task.add_trigger(self._prestage_trigger(_family, parts))
         
         # Finalise
         family = self.suite.add_family("final")
@@ -185,6 +193,117 @@ class Creator:
         with open(config_file, 'r') as file:
             config = yaml.safe_load(file)
         return config
+
+    def _define_prestage(self, prestage):
+        """
+        Add a family `prestage` with one family per month (`m<YYYY>_<MM>`), each running one
+        MARS request file that covers that month. Loaders wait (see _prestage_trigger) for the
+        months of the part they are about to load, so they find the data on disk instead of
+        waiting for tape inside their walltime.
+        """
+        self._load_dates()
+        months = sorted({(d.year, d.month) for d in self.dates})
+
+        request_dir = os.path.join(self.suite_path, "requests", self.suite_name)
+        os.makedirs(request_dir, exist_ok=True)
+
+        self.suite.add_limit("prestage", int(prestage.get("max_running", 4)))
+        family = self.suite.add_family("prestage")
+        family.add_inlimit("prestage")
+        self._set_resources(family)
+        for year, month in months:
+            in_month = [d for d in self.dates if (d.year, d.month) == (year, month)]
+            path = os.path.join(request_dir, f"{year}_{month:02d}.req")
+            with open(path, "w") as f:
+                f.write(self._mars_requests(prestage, in_month[0], in_month[-1]))
+            _family = family.add_family(self._month_name(year, month))
+            _family.add_variable("REQUEST", path)
+            _family.add_task("stage")
+
+    def _mars_requests(self, prestage, first, last):
+        """
+        MARS request text for the dates first..last (inclusive). Each entry of
+        prestage['requests'] is a MARS request without date; lists are joined with '/'.
+        """
+        verb = prestage.get("verb", "stage")
+        if verb not in ("stage", "retrieve"):
+            raise ValueError(f"prestage verb must be 'stage' or 'retrieve', not {verb}")
+        text = []
+        for template in prestage["requests"]:
+            request = dict(template)
+            request["date"] = f"{first:%Y%m%d}/to/{last:%Y%m%d}"
+            if verb == "retrieve":
+                request["target"] = '"/dev/null"'
+            lines = [verb]
+            for key, value in request.items():
+                if isinstance(value, (list, tuple)):
+                    value = "/".join(str(v) for v in value)
+                lines.append(f"    {key}={value}")
+            text.append(",\n".join(lines))
+        return "\n\n".join(text) + "\n"
+
+    def _prestage_trigger(self, loader, parts):
+        """
+        Trigger for loader/run: the prestage months of the part the loader's PART repeat is
+        on are complete. For a RepeatString, `:PART` in a trigger is the index in the list.
+        """
+        loader_path = loader.get_abs_node_path()
+        conditions = []
+        for index, part in enumerate(parts):
+            months = sorted({(d.year, d.month) for d in self._part_dates(int(part))})
+            staged = " and ".join(
+                f"/{self.suite_name}/prestage/{self._month_name(*m)} == complete" for m in months
+            ) or "1 == 1"
+            conditions.append(f"({loader_path}:PART == {index} and {staged})")
+        return " or ".join(conditions)
+
+    @staticmethod
+    def _month_name(year, month):
+        return f"m{year}_{month:02d}"
+
+    def _load_dates(self):
+        """
+        Dates of the dataset from the anemoi-datasets recipe (`base_dates` for the
+        trajectories layout, else `dates`), and the group size (`build.group_by`).
+        Only start/end/frequency dates and an integer group_by are supported.
+        """
+        recipe = self._load_config(self.config_file)
+        dates = recipe.get("base_dates", recipe.get("dates"))
+        start, end = (self._as_datetime(dates[k]) for k in ("start", "end"))
+        step = self._as_timedelta(dates.get("frequency", "1d"))
+        self.dates = []
+        while start <= end:
+            self.dates.append(start)
+            start += step
+        self.group_by = recipe.get("build", {}).get("group_by")
+        if not isinstance(self.group_by, int):
+            raise ValueError(f"prestage needs an integer build.group_by, not {self.group_by!r}")
+
+    def _part_dates(self, part):
+        """
+        Dates loaded by `--part part/nparts`, with the same split as
+        anemoi-datasets create/parts.py (groups of group_by dates).
+        """
+        ngroups = -(-len(self.dates) // self.group_by)
+        chunk = ngroups / self.nparts
+        groups = [g for g in range(ngroups) if (part - 1) * chunk <= g < part * chunk]
+        return [d for g in groups for d in self.dates[g * self.group_by:(g + 1) * self.group_by]]
+
+    @staticmethod
+    def _as_datetime(value):
+        if isinstance(value, datetime.datetime):
+            return value
+        if isinstance(value, datetime.date):
+            return datetime.datetime(value.year, value.month, value.day)
+        return datetime.datetime.fromisoformat(str(value))
+
+    @staticmethod
+    def _as_timedelta(value):
+        if isinstance(value, int):
+            return datetime.timedelta(hours=value)
+        value = str(value)
+        units = {"h": "hours", "d": "days"}
+        return datetime.timedelta(**{units[value[-1]]: int(value[:-1])})
 
     def _set_parts(self):
         """

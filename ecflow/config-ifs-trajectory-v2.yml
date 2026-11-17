@@ -1,0 +1,113 @@
+common:
+  small: &small
+    qos: nf
+    time: 00:45:00
+    nodes: 1
+    ntasks_per_node: 1
+    cpus_per_task: 1
+    mem: 2G
+  small_long: &small_long
+    qos: nf
+    time: 02:00:00
+    nodes: 1
+    ntasks_per_node: 1
+    cpus_per_task: 1
+    mem: 2G
+  medium: &medium
+    qos: nf
+    time: 03:00:00
+    nodes: 1
+    ntasks_per_node: 1
+    cpus_per_task: 1
+    mem: 4G
+  large: &large
+    qos: nf
+    time: 04:30:00
+    nodes: 1
+    ntasks_per_node: 1
+    cpus_per_task: 1
+    mem: 128G
+  stage: &stage
+    qos: nf
+    time: 12:00:00   # waiting for tape only, no CPU/memory
+    nodes: 1
+    ntasks_per_node: 1
+    cpus_per_task: 1
+    mem: 2G
+
+# c2026-11-ifs-finetune-datasets: IFS fc trajectories 2021-2024, cropped to CERRA + 620 km band
+# anemoi-datasets create recipe (configs worktree of the campaign)
+config: /hpcperm/cu0k/src/campaigns/c2026-11-ifs-finetune-datasets/configs/cerra-ft-od-fc-oper-0001-mars-n320-2021-2024-6h-6h-v2-rmi.yaml
+# output zarr.-file
+output: /scratch/cu0k/ai-ml/datasets/cerra-ft-od-fc-oper-0001-mars-n320-2021-2024-6h-6h-v2-rmi.zarr
+# overwrite previous file (default: False)
+overwrite: False
+# user-defined cache-dir (default: default cache-dir)
+cache : /scratch/cu0k
+# number of anemoi-datasets load parts (366 groups of 16 base dates: ~6 groups, ~1 month per part)
+load_parts: 61
+# number of ecFlow tasks for loading
+load_tasks: 20
+# maximum number of ecFlow task running at the same time (not-implemented)
+max_load_tasks_running: 20
+# Calculate additional statistics (default: False)
+statistics: True
+# number of anemoi-dataset load-additions parts
+statistics_parts: 50
+# number of ecFlow tasks for loading additions
+statistics_tasks: 24
+# delta's for which the statistics are calculated
+deltas:
+  - 6
+# Use --trace flage (default: False)
+trace: False
+# Cleanup after dataset creation (default: False)
+cleanup: True
+# Patch after dataset creation (default: False)
+patch: True
+# Name of the conda environment to use (default: no conda environment)
+conda_environment: anemoi-datasets
+
+# Recall each month from tape before the loaders need it (family `prestage`, one task per
+# month; a loader waits for the months of the part it is about to load).
+prestage:
+  # stage: recall to the MARS disk cache, no transfer. retrieve: same, transferring to /dev/null.
+  verb: stage
+  # concurrent prestage tasks (ecFlow limit)
+  max_running: 6
+  # MARS requests without date (filled per month); must cover what the recipe retrieves.
+  # anemoi requests stream oper at 00/12 UTC and scda at 06/18 UTC.
+  requests:
+    - &sfc
+      class: od
+      expver: '0001'
+      type: fc
+      stream: oper
+      time: ['0000', '1200']
+      step: 0/to/36/by/6
+      levtype: sfc
+      param: [2t, 2d, 10u, 10v, 100u, 100v, sp, msl, lsm, skt, tcw, 243.128, rsn, sd, tcc,
+              hcc, mcc, lcc, z, strd, ssrd, sf, tp, ssr]
+    - <<: *sfc
+      stream: scda
+      time: ['0600', '1800']
+    - &pl
+      <<: *sfc
+      levtype: pl
+      levelist: [1, 10, 30, 50, 70, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000]
+      param: [q, t, u, v, z]
+    - <<: *pl
+      stream: scda
+      time: ['0600', '1800']
+
+# SLURM resources for the different tasks
+resources:
+  init: *small
+  prestage: *stage
+  load: *large
+  final: *small
+  init_statistics: *small
+  load_statistics: *medium
+  final_statistics: *small_long
+  cleanup: *small
+  patch: *small

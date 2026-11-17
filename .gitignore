@@ -5,3 +5,5 @@ datasets/*
 log/*
 ecflow/jobs/*
 !ecflow/jobs/.gitkeep
+ecflow/requests/*
+__pycache__/
