@@ -22,8 +22,11 @@ DEFAULT_ECF = dict(
     ECF_HOME='{suite_path}/jobs',
     ECF_INCLUDE='{suite_path}/include',
     ECF_FILES='{suite_path}/scr',
-    ECF_OUT=f'/scratch/{os.getenv("USER")}/ECF',
-    ECF_LOGHOST='hpc-login',
+    # Job output on HOME: the ecFlow VM mounts HOME/PERM only (not SCRATCH/HPCPERM), and
+    # ECMWF advises against PERM for ECF_OUT. A log server on the VM serves this directory
+    # on port 35000+uid; ecflow_ui reaches it through the ssh tunnel, hence localhost.
+    ECF_OUT=f'{os.getenv("HOME")}/ecflow_out',
+    ECF_LOGHOST='localhost',
     ECF_LOGPORT=str(os.getuid()+35000),
     ECF_JOB_CMD= '%TROIKA% -c %TROIKA_CONFIG% '\
                     'submit -o %ECF_JOBOUT% %HOST% %ECF_JOB%',
