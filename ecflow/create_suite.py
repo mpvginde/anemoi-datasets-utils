@@ -1,5 +1,6 @@
 import yaml
 import os
+import re
 import datetime
 from ecflow import *
 from argparse import ArgumentParser
@@ -116,8 +117,12 @@ class Creator:
         for i,parts in enumerate(self.parts):
             _family = family.add_family(f"loader_{i+1}")
             _family.add_repeat(RepeatString("PART",parts))
+            if prestage and prestage.get("tape_groups"):
+                self._add_part_stage(_family, parts, prestage)
             task = _family.add_task("run")
-            if prestage:
+            if prestage and prestage.get("tape_groups"):
+                task.add_trigger("stage_part == complete")
+            elif prestage:
                 task.add_trigger(self._prestage_trigger(_family, parts))
         
         # Finalise
@@ -195,6 +200,83 @@ class Creator:
         return config
 
     def _define_prestage(self, prestage):
+        if prestage.get("tape_groups"):
+            self._define_prestage_tape_groups(prestage)
+        else:
+            self._define_prestage_months(prestage)
+
+    def _define_prestage_tape_groups(self, prestage):
+        """
+        Just-in-time staging by tape cartridge (prestage['tape_groups']: a directory of
+        `stage` request files, one per cartridge group, from tapegroups.py; each has one
+        `time=` and an explicit `date=` list).
+
+        Family `prestage` gets one family per group. A group's `stage` task triggers when a
+        loader whose current part needs one of the group's base dates reaches that part, so
+        data is recalled shortly before it is loaded (the MARS disk cache turns over within
+        hours). Each loader then runs `stage_part` (see _add_part_stage) before `run`.
+        """
+        self._load_dates()
+        request_dir = os.path.join(self.suite_path, "requests", self.suite_name)
+        os.makedirs(os.path.join(request_dir, "groups"), exist_ok=True)
+        part_of = {d: p for p in range(1, self.nparts + 1) for d in self._part_dates(p)}
+        loader_of = {int(part): (i, index)
+                     for i, parts in enumerate(self.parts) for index, part in enumerate(parts)}
+
+        self.suite.add_limit("prestage", int(prestage.get("max_running", 4)))
+        family = self.suite.add_family("prestage")
+        family.add_inlimit("prestage")
+        self._set_resources(family)
+        self.part_groups = {p: [] for p in range(1, self.nparts + 1)}
+        source = prestage["tape_groups"]
+        for name in sorted(f for f in os.listdir(source) if f.endswith(".req")):
+            with open(os.path.join(source, name)) as f:
+                text = f.read()
+            time = re.search(r"^\s*time=(\d{4})", text, re.M).group(1)
+            dates = re.search(r"^\s*date=([0-9/]+)", text, re.M).group(1).split("/")
+            base = {datetime.datetime.strptime(d + time, "%Y%m%d%H%M") for d in dates}
+            parts = sorted({part_of[b] for b in base if b in part_of})
+            if not parts:  # only dates outside the dataset (e.g. 2020-12-31 06 UTC)
+                continue
+            path = os.path.join(request_dir, "groups", name)
+            with open(path, "w") as f:
+                f.write(text)
+            group = "g_" + name[:-len(".req")].replace("-", "_")
+            _family = family.add_family(group)
+            _family.add_variable("REQUEST", path)
+            task = _family.add_task("stage")
+            task.add_trigger(" or ".join(
+                f"/{self.suite_name}/load/loader_{loader_of[p][0] + 1}:PART == {loader_of[p][1]}"
+                for p in parts))
+            for p in parts:
+                self.part_groups[p].append(f"/{self.suite_name}/prestage/{group}")
+
+        # catch-all request per part (all request templates over the part's dates)
+        for p in range(1, self.nparts + 1):
+            dates = self._part_dates(p)
+            with open(os.path.join(request_dir, f"part_{p}.req"), "w") as f:
+                f.write(self._mars_requests(prestage, dates[0], dates[-1]))
+        self.request_dir = request_dir
+
+    def _add_part_stage(self, loader, parts, prestage):
+        """
+        Task `stage_part` in a loader family: stages the whole current part (all request
+        templates) once the part's tape groups are complete. Normally everything is then
+        online and it returns at once; it catches what the tape map missed or the cache
+        evicted, outside the loader's walltime. Resources: those of `prestage`.
+        """
+        task = loader.add_task("stage_part")
+        task.add_variable("REQUEST_DIR", self.request_dir)
+        for key, value in self.config["resources"]["prestage"].items():
+            task.add_variable(key.upper(), value)
+        path = loader.get_abs_node_path()
+        conditions = []
+        for index, part in enumerate(parts):
+            staged = " and ".join(f"{g} == complete" for g in self.part_groups[int(part)]) or "1 == 1"
+            conditions.append(f"({path}:PART == {index} and {staged})")
+        task.add_trigger(" or ".join(conditions))
+
+    def _define_prestage_months(self, prestage):
         """
         Add a family `prestage` with one family per month (`m<YYYY>_<MM>`), each running one
         MARS request file that covers that month. Loaders wait (see _prestage_trigger) for the

@@ -1,0 +1,9 @@
+%include <head.h>
+%include <slurm.h>
+
+# Catch-all stage of the loader's current part (all prestage request templates over the
+# part's dates), after the part's tape groups; see create_suite.py _add_part_stage
+cat %REQUEST_DIR%/part_%PART%.req
+mars %REQUEST_DIR%/part_%PART%.req
+
+%include <tail.h>

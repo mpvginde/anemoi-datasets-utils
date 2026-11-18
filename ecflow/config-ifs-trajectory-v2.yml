@@ -68,18 +68,21 @@ patch: True
 # Name of the conda environment to use (default: no conda environment)
 conda_environment: anemoi-datasets
 
-# Recall each month from tape before the loaders need it (family `prestage`, one task per
-# month; a loader waits for the months of the part it is about to load).
+# Just-in-time staging by tape cartridge (family `prestage`, one task per cartridge group, from
+# tapegroups.py; a group is staged when a loader whose current part needs it reaches that part),
+# then a catch-all `stage_part` per loader part before `run`. Without `tape_groups`: one task
+# per month, loaders wait for the months of their part.
 prestage:
-  # stage: recall to the MARS disk cache, no transfer. retrieve: same, transferring to /dev/null.
+  # stage: recall to the MARS disk cache, no transfer (blocks until the data is on disk).
   verb: stage
-  # concurrent prestage tasks (ecFlow limit)
-  max_running: 6
-  # MARS requests without date (filled per month).
-  # anemoi requests stream oper at 00/12 UTC and scda at 06/18 UTC, steps 6-36 only (also the
-  # from-zero accumulations: no step 0). Only the requests that hit tape in the 2026-11-18 probe
-  # are staged: scda sfc and pl in both streams. oper sfc (incl. accumulations) was online in
-  # every sampled month; whatever is missed is still loaded, only slower.
+  # concurrent tape-group stage tasks (ecFlow limit); each group touches one cartridge
+  max_running: 10
+  # directory of tape-group stage requests (tapegroups.py output, req/)
+  tape_groups: /ec/res4/scratch/cu0k/c2026-11-ifs-finetune-datasets/prestage-probe/tapegroups/full/req
+  # MARS requests without date (filled per month, or per part for stage_part); all that the
+  # recipe retrieves. anemoi requests stream oper at 00/12 UTC and scda at 06/18 UTC, steps 6-36
+  # only (also the from-zero accumulations: no step 0). The tape groups were built from the
+  # three tape-prone ones (2026-11-18 probe): scda sfc, oper pl, scda pl.
   requests:
     - &sfc
       class: od
@@ -91,6 +94,9 @@ prestage:
       levtype: sfc
       param: [2t, 2d, 10u, 10v, 100u, 100v, sp, msl, lsm, skt, tcw, 243.128, rsn, sd, tcc,
               hcc, mcc, lcc, z, strd, ssrd, sf, tp, ssr]
+    - <<: *sfc
+      stream: oper
+      time: ['0000', '1200']
     - &pl
       <<: *sfc
       stream: oper

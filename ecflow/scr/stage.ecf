@@ -1,7 +1,7 @@
 %include <head.h>
 %include <slurm.h>
 
-# Recall the MARS data of one month from tape (prestage family, see create_suite.py)
+# Recall MARS data from tape: one month, or one tape-cartridge group (prestage family, see create_suite.py)
 cat %REQUEST%
 mars %REQUEST%
 
