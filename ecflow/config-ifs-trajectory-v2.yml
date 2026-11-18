@@ -75,24 +75,26 @@ prestage:
   verb: stage
   # concurrent prestage tasks (ecFlow limit)
   max_running: 6
-  # MARS requests without date (filled per month); must cover what the recipe retrieves.
-  # anemoi requests stream oper at 00/12 UTC and scda at 06/18 UTC.
+  # MARS requests without date (filled per month).
+  # anemoi requests stream oper at 00/12 UTC and scda at 06/18 UTC, steps 6-36 only (also the
+  # from-zero accumulations: no step 0). Only the requests that hit tape in the 2026-11-18 probe
+  # are staged: scda sfc and pl in both streams. oper sfc (incl. accumulations) was online in
+  # every sampled month; whatever is missed is still loaded, only slower.
   requests:
     - &sfc
       class: od
       expver: '0001'
       type: fc
-      stream: oper
-      time: ['0000', '1200']
-      step: 0/to/36/by/6
+      stream: scda
+      time: ['0600', '1800']
+      step: 6/to/36/by/6
       levtype: sfc
       param: [2t, 2d, 10u, 10v, 100u, 100v, sp, msl, lsm, skt, tcw, 243.128, rsn, sd, tcc,
               hcc, mcc, lcc, z, strd, ssrd, sf, tp, ssr]
-    - <<: *sfc
-      stream: scda
-      time: ['0600', '1800']
     - &pl
       <<: *sfc
+      stream: oper
+      time: ['0000', '1200']
       levtype: pl
       levelist: [1, 10, 30, 50, 70, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000]
       param: [q, t, u, v, z]
