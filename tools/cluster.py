@@ -79,12 +79,38 @@ def cluster_one(prober, name, base, time, runs, max_tries, state_path, pool):
         if tapes > 1:
             clusters.append({"rep": d0, "dates": ds, "multi": True})
         else:
+            # A union test "rep + run on 1 tape" only proves a shared cartridge while the rep is
+            # still offline: once the rep is back on disk (the MARS cache turns over in hours)
+            # it passes for any run. So the run is probed alone too, and a merge needs the union
+            # to hold more tape files than the run alone; candidates whose rep went online are
+            # retired (v1 of this script let one such cluster absorb every later run).
+            alone = pool.submit(prober.cost, name, base, [time], ds)
             cands = order[:max_tries]
             futs = [pool.submit(prober.cost, name, base, [time], [clusters[i]["rep"]] + ds) for i in cands]
-            hit = next((i for i, f in zip(cands, futs) if f.result()["number_of_tapes"] == 1), None)
+            own = alone.result()["number_of_tape_files"]
+            hit = None
+            for i, f in zip(cands, futs):
+                c = f.result()
+                if c["number_of_tapes"] != 1:
+                    continue
+                if c["number_of_tape_files"] > own and own > 0:
+                    hit = i
+                    break
+                if c["number_of_tape_files"] <= own:
+                    order.remove(i)
+                    print(f"{name} {time}: rep {tg.fmt(clusters[i]['rep'])} online, cluster retired", flush=True)
             if hit is None:
-                clusters.append({"rep": d0, "dates": ds, "multi": False})
-                order.insert(0, len(clusters) - 1)
+                rep = None
+                if own > 0:  # rep = first day of the run still offline
+                    for d in ds:
+                        if len(ds) == 1 or prober.cost(name, base, [time], [d])["number_of_tape_files"] > 0:
+                            rep = d
+                            break
+                clusters.append({"rep": rep or d0, "dates": ds, "multi": False})
+                if rep is not None:
+                    order.insert(0, len(clusters) - 1)
+                else:  # run now online: own group, never a merge target
+                    print(f"{name} {time}: run {tg.fmt(d0)}..{tg.fmt(d1)} online now, own group", flush=True)
             else:
                 clusters[hit]["dates"].extend(ds)
                 order.remove(hit)
@@ -103,6 +129,8 @@ def main():
     ap.add_argument("outdir")
     ap.add_argument("--max-tries", type=int, default=12)
     ap.add_argument("--max-mars", type=int, default=12, help="concurrent MARS calls")
+    ap.add_argument("--split", metavar="PREV_OUTDIR",
+                    help="keep PREV_OUTDIR's single-tape clusters, re-cluster the runs of its multi-tape groups")
     args = ap.parse_args()
 
     cfg = yaml.safe_load(open(args.config))
@@ -112,6 +140,26 @@ def main():
         os.makedirs(os.path.join(args.outdir, sub), exist_ok=True)
     prober = LimitedProber(args.outdir, args.max_mars)
     runs = load_runs(args.costs)
+    kept = {}
+    if args.split:
+        # keep the clusters of a previous run whose final check gave 1 tape; re-cluster only
+        # the runs of the multi-day groups that came out on more than one tape
+        bad = {}
+        with open(os.path.join(args.split, "groups.tsv")) as f:
+            next(f)
+            for line in f:
+                tag, name, time, first, last, ndates, tapes = line.split("\t")[:7]
+                if int(tapes) > 1 and int(ndates) > 1:
+                    bad.setdefault((name, time), set()).add(first)
+        for key in runs:
+            prev = json.load(open(os.path.join(args.split, "state", f"{key[0]}_{key[1]}.json")))["clusters"]
+            prev = [{"rep": parse_date(c["rep"]), "dates": [parse_date(d) for d in c["dates"]], "multi": c["multi"]}
+                    for c in prev]
+            badc = [c for c in prev if tg.fmt(min(c["dates"])) in bad.get(key, ())]
+            kept[key] = [c for c in prev if c not in badc]
+            baddates = {d for c in badc for d in c["dates"]}
+            runs[key] = [r for r in runs[key] if r[0] in baddates]
+            print(f"{key[0]} {key[1]}: {len(kept[key])} clusters kept, {len(badc)} split", flush=True)
     for (name, time), r in sorted(runs.items()):
         print(f"{name} {time}: {len(r)} runs", flush=True)
 
@@ -120,7 +168,7 @@ def main():
         futs = {key: outer.submit(cluster_one, prober, key[0], templates[key[0]], key[1], r, args.max_tries,
                                   os.path.join(args.outdir, "state", f"{key[0]}_{key[1]}.json"), inner)
                 for key, r in runs.items()}
-        clusters = {key: f.result() for key, f in futs.items()}
+        clusters = {key: kept.get(key, []) + f.result() for key, f in futs.items()}
 
     checks = {key: [inner.submit(prober.cost, key[0], templates[key[0]], [key[1]], c["dates"]) for c in cl]
               for key, cl in clusters.items()}

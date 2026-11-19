@@ -16,6 +16,11 @@ disk cache turns over within hours).
    from `costs.tsv` (no new bisection), cluster them by cartridge with parallel MARS calls,
    resumable (`state/`), write `req/*.req` (one `stage` request per cluster) and
    `groups.tsv` (dates, tapes, offline size per group, checked once more at the end).
+   A merge needs the union "representative + run" on one tape **and** with more tape
+   files than the run alone: once a representative is back on disk the one-tape test
+   passes for any run (in the first full run two clusters swallowed every later run and
+   ended on 20 and 22 tapes). `--split <previous cluster-outdir>` keeps the previous
+   one-tape clusters and re-clusters only the runs of groups that checked at > 1 tape.
 3. Point `prestage.tape_groups` at `<cluster-outdir>/req` and regenerate the suite.
 
 Run both through `tapegroups.sbatch` (QoS `nf`); the full 2020-12-31..2024-12-31 map took

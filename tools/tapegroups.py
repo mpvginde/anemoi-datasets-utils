@@ -8,7 +8,8 @@ touches. Per prestage request type (from the suite config) and per base time:
    (fully online ranges, 0 tapes, need no staging);
 2. cluster those runs by cartridge: a run joins an existing cluster when one representative
    date of the cluster plus the run still reports one tape (the most recently used clusters
-   are tried first);
+   are tried first). Caution: this test passes for any run once the representative is back on
+   disk; prefer cluster.py (on this script's costs.tsv), which guards against that;
 3. write one `stage` request per cluster, with an explicit date list, and check it reports
    one tape.
 
