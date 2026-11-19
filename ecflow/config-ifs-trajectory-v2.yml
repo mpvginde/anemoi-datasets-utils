@@ -77,8 +77,8 @@ prestage:
   verb: stage
   # concurrent tape-group stage tasks (ecFlow limit); each group touches one cartridge
   max_running: 10
-  # directory of tape-group stage requests (tapegroups.py output, req/)
-  tape_groups: /ec/res4/scratch/cu0k/c2026-11-ifs-finetune-datasets/prestage-probe/tapegroups/full/req
+  # directory of tape-group stage requests (cluster.py output, req/)
+  tape_groups: /ec/res4/scratch/cu0k/c2026-11-ifs-finetune-datasets/prestage-probe/tapegroups/full-cl2/req
   # MARS requests without date (filled per month, or per part for stage_part); all that the
   # recipe retrieves. anemoi requests stream oper at 00/12 UTC and scda at 06/18 UTC, steps 6-36
   # only (also the from-zero accumulations: no step 0). The tape groups were built from the
