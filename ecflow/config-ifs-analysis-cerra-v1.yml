@@ -1,0 +1,79 @@
+common:
+  small: &small
+    qos: nf
+    time: 00:45:00
+    nodes: 1
+    ntasks_per_node: 1
+    cpus_per_task: 1
+    mem: 8G   # init (1 date) peaked at 3.5 GB
+  small_long: &small_long
+    qos: nf
+    time: 02:00:00
+    nodes: 1
+    ntasks_per_node: 1
+    cpus_per_task: 1
+    mem: 4G
+  medium: &medium
+    qos: nf
+    time: 03:00:00
+    nodes: 1
+    ntasks_per_node: 1
+    cpus_per_task: 1
+    mem: 16G
+  large: &large
+    qos: nf
+    # one part = 24 groups of 2 dates (48 dates); the time is MARS (client-side) post-processing
+    # of the spectral pl fields: 16-date test with group_by 2 loaded in 29.5 min (~1.85 min/date),
+    # so ~90 min per part
+    time: 03:00:00
+    nodes: 1
+    ntasks_per_node: 1
+    cpus_per_task: 1
+    mem: 16G   # 16-date tests: 5.8 GB with group_by 2 (12.4 GB with group_by 16)
+
+# c2026-11-ifs-finetune-datasets: IFS od/oper/an 2021-2024 interpolated to the CERRA 5.5 km grid
+# (interior initial states). anemoi-datasets create recipe (configs worktree of the campaign)
+config: /hpcperm/cu0k/src/campaigns/c2026-11-ifs-finetune-datasets/configs/cerra-ft-od-an-oper-0001-mars-5p5km-2021-2024-6h-v1-rmi.yaml
+# output zarr.-file
+output: /scratch/cu0k/ai-ml/datasets/cerra-ft-od-an-oper-0001-mars-5p5km-2021-2024-6h-v1-rmi.zarr
+# overwrite previous file (default: False)
+overwrite: False
+# user-defined cache-dir (default: default cache-dir)
+cache : /scratch/cu0k
+# number of anemoi-datasets load parts (5845 dates = 2923 groups of 2: ~24 groups ~ 48 dates per part)
+load_parts: 122
+# number of ecFlow tasks for loading
+load_tasks: 20
+# maximum number of ecFlow task running at the same time (not-implemented)
+max_load_tasks_running: 20
+# Calculate additional statistics (default: False)
+statistics: True
+# number of anemoi-dataset load-additions parts
+statistics_parts: 50
+# number of ecFlow tasks for loading additions
+statistics_tasks: 24
+# delta's for which the statistics are calculated
+deltas:
+  - 6
+# Use --trace flage (default: False)
+trace: False
+# Cleanup after dataset creation (default: False)
+cleanup: True
+# Patch after dataset creation (default: False)
+patch: True
+# Name of the conda environment to use (default: no conda environment)
+conda_environment: anemoi-datasets
+
+# No prestage: od/oper/an 2021-2024 is all on disk (list,output=cost per year, 2026-11-20:
+# 0 tapes, 2.6 TB online)
+
+# SLURM resources for the different tasks
+resources:
+  init: *small
+  load: *large
+  final: *small
+  init_statistics: *small
+  load_statistics: *medium
+  final_statistics: *small_long
+  cleanup: *small
+  patch: *small
