@@ -34,6 +34,9 @@ common:
     ntasks_per_node: 1
     cpus_per_task: 1
     mem: 2G
+    # retries: MARS/HPSS server errors (mover outage, server task died) abort a stage, and a
+    # failed group blocks every loader whose part needs that cartridge
+    ecf_tries: 3
 
 # c2026-11-ifs-finetune-datasets: IFS fc trajectories 2021-2024, cropped to CERRA + 620 km band
 # anemoi-datasets create recipe (configs worktree of the campaign)
